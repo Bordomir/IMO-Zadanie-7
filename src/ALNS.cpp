@@ -1,5 +1,7 @@
 #include "../include/ALNS.hpp"
 #include "../include/Common.hpp"
+#include "../include/MemorySteepLocalSearch.hpp"
+#include "../include/RandomSolver.hpp"
 
 #include <algorithm>
 #include <numeric>
@@ -11,7 +13,13 @@
 #include <chrono>
 #include <mutex>
 #include <random>
-
+#include <omp.h>
+#include <utility>
+#include <vector>
+#include <limits>
+#include <atomic>
+#include <thread>
+#include <cmath>
 
 using namespace std;
 using namespace filesystem;
@@ -25,13 +33,171 @@ struct Subpath { size_t start; int score; };
 
 void ALNS::solve()
 {
+    int n = data->numNodes;
+    startTime = chrono::steady_clock::now();
+
+    weights = vector<vector<double>>(n, vector<double>(n, 1.0));
+
+    bestSolution = vector<int>();
+    bestSolutionScore = numeric_limits<int>::min();
+    mutex bestSolutionMutex;
+
+    currentIterations = 0;
+    #pragma omp parallel
+    {
+        int threadId = omp_get_thread_num();
+        mt19937 rng(threadId);
+
+        MemorySteepLocalSearch localSearch(*data, bestSolution, MoveType::SwapEdges);
+
+        RandomSolver randomSolver(*data, rng);
+        randomSolver.solve();
+        auto [currentSolution, currentScore] = improveSolution(localSearch, randomSolver.solution);
+
+        {
+            scoped_lock lock(bestSolutionMutex);
+            if (currentScore > bestSolutionScore)
+            {
+                bestSolution = currentSolution;
+                bestSolutionScore = currentScore;
+            }
+        }
+
+        double temperature = tempeatureStart;
+        double temperatureRatio = temperatureEnd / tempeatureStart;
+
+        bool keepRunning = true;
+        uniform_real_distribution<double> dist(0.0, 1.0);
+        while(keepRunning)
+        {
+            
+            auto currentTime = chrono::steady_clock::now();
+            auto elapsedTime = chrono::duration<double, std::milli>(currentTime-startTime).count();
+            keepRunning = elapsedTime < timeLimit;
+            if(elapsedTime >= timeLimit)
+            {
+                break;
+            }
+
+            double timeRatio = elapsedTime / timeLimit;
+            temperature = tempeatureStart * pow(temperatureRatio, timeRatio);
+            vector<int> newSolution;
+            if(temperature > dist(rng))
+            {
+                randomSolver.solve();
+                auto [currentSolution, newSolutionScore] = improveSolution(localSearch, randomSolver.solution);
+                newSolution = move(currentSolution);
+            } else {
+                {
+                    scoped_lock lock(bestSolutionMutex);
+                    newSolution = bestSolution;
+                }
+            }
+
+            if(dist(rng) < smartDestroyChance)
+            {
+                destroySmart(newSolution, rng);
+            }
+            else
+            {
+                destroyHeuristic(newSolution, rng);
+            }
+
+            repair(newSolution, rng);
+
+            auto [improvedSolution, improvedScore] = improveSolution(localSearch, newSolution);
+
+            int scoreDifference = improvedScore - currentScore;
+            
+            int globalBestScore;
+            {
+                scoped_lock lock(bestSolutionMutex);
+                globalBestScore = bestSolutionScore;
+                if (improvedScore > bestSolutionScore)
+                {
+                    bestSolution = improvedSolution;
+                    bestSolutionScore = improvedScore;
+                }
+            }
+            updateWeights(improvedSolution, (scoreDifference - globalBestScore) / globalBestScore);
+            
+            if (threadId == 0) {
+                evaporateWeights();
+            }
+
+            currentIterations++;
+        }
+    }
 }
 
 void ALNS::destroySmart(vector<int> &solution, mt19937& rng)
 {
+    int n = solution.size();
+    if (n <= 4)
+    {
+        return;
+    }
+
+    int nNodesToRemove = n * destructionPercentage;
+
+    if (nNodesToRemove == 0)
+    {
+        return;
+    }
+
+    if (nNodesToRemove == static_cast<int>(n))
+    {
+        solution.clear();
+        return;
+    }
+
+    if (nNodesToRemove == 1)
+    {
+        solution.erase(solution.begin() + randomInt(0, n - 1, rng));
+        return;
+    }
+
+
+    vector<double> removalProbabilities(solution.size(), 0.0);
+
+    int maxNodeProfit = *max_element(data->nodeProfits.begin(), data->nodeProfits.end()); 
+
+    {
+        scoped_lock lock(weightsMutex);
+        for (int i = 0; i < n; ++i)
+        {
+            int current = solution[i];
+            int prev = solution[(i - 1 + n) % n];
+            int next = solution[(i + 1) % n];
+
+            double weight = weights[prev][current] + weights[current][next];
+            double nodeProfit = data->nodeProfits[current] / maxNodeProfit;
+            removalProbabilities[i] = 1.0/(weight + nodeProfit);
+        }
+    }
+
+    discrete_distribution<size_t> nodeDist(removalProbabilities.begin(), removalProbabilities.end());
+
+    std::vector<bool> toRemove(n, false);
+    int removedCount = 0;
+    while (removedCount < nNodesToRemove) {
+        size_t index = nodeDist(rng);
+        if (!toRemove[index]) {
+            toRemove[index] = true;
+            removedCount++;
+        }
+    }
+
+    vector<int> newSolution;
+    for (int i = 0; i < n; ++i) {
+        if (!toRemove[i]) {
+            newSolution.push_back(solution[i]);
+        }
+    }
+    solution = move(newSolution);
 }
 
-void ALNS::destroyHeuristic(vector<int> &solution, mt19937& rng)
+void ALNS::destroyHeuristic(vector<int> &solution, mt19937& rng) const
 {
     if (solution.empty())
     {
@@ -138,7 +304,7 @@ void ALNS::destroyHeuristic(vector<int> &solution, mt19937& rng)
     solution = std::move(reducedSolution);
 }
 
-void ALNS::repair(vector<int> &solution, mt19937& rng)
+void ALNS::repair(vector<int> &solution, mt19937& rng) const
 {
     if (solution.empty())
     {
@@ -215,14 +381,70 @@ void ALNS::repair(vector<int> &solution, mt19937& rng)
     common::improveByRemovingNodes(solution, data);
 }
 
-int ALNS::randomInt(int min, int max, mt19937 &rng)
+pair<vector<int>,int> ALNS::improveSolution(MemorySteepLocalSearch &LocalSearch, vector<int> &solution) const
+{
+    LocalSearch.solution = solution;
+    LocalSearch.improve();
+    return make_pair(LocalSearch.solution, LocalSearch.solutionScore);
+}
+void ALNS::updateWeights(const vector<int> &solution, int scoreDifference)
+{
+    scoped_lock lock(weightsMutex);
+    // scoreDifference *= 0.001;
+    int n = solution.size();
+    int n1 = solution[n-1];
+    int n2 = solution[0];
+    weights[n1][n2] += scoreDifference;
+    weights[n2][n1] += scoreDifference;
+    if (weights[n1][n2] < 1.0)
+    {
+        weights[n1][n2] = 1.0;
+    }
+    if (weights[n2][n1] < 1.0)        
+    {
+        weights[n2][n1] = 1.0;
+    }
+    for (size_t i = 1; i < solution.size(); i++)
+    {
+        n1 = solution[i-1];
+        n2 = solution[i]; 
+        weights[n1][n2] += scoreDifference;
+        weights[n2][n1] += scoreDifference;
+        if (weights[n1][n2] < 1.0)
+        {
+            weights[n1][n2] = 1.0;
+        }
+        if (weights[n2][n1] < 1.0)        
+        {
+            weights[n2][n1] = 1.0;
+        }
+    }
+}
+
+void ALNS::evaporateWeights()
+{
+    scoped_lock lock(weightsMutex);
+    for (auto& row : weights)
+    {
+        for (double& weight : row)
+        {
+            weight *= weightDecay;
+            if(weight < 1.0)
+            {
+                weight = 1.0;
+            }
+        }
+    }
+}
+
+int ALNS::randomInt(int min, int max, mt19937 &rng) const
 {
     uniform_int_distribution<int> dist(min, max);
     return dist(rng);
 }
 string ALNS::getAlgorithmName() const
 {
-    return "ALNS";
+    return format("ALNS_{}_{}_{}", weightDecay, smartDestroyChance, tempeatureStart);
 }
 
 int ALNS::calculateScore(const vector<int> &solution) const
