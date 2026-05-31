@@ -24,6 +24,7 @@
 #include "../include/HAE2.hpp"
 #include "../include/HAE3.hpp"
 #include "../include/ALNS.hpp"
+#include "../include/MetaParallel.hpp"
 
 using namespace std;
 
@@ -59,81 +60,81 @@ int main()
     MemorySteepLocalSearch LocalSearchA(dataA, vector<int>{});
     MemorySteepLocalSearch LocalSearchB(dataB, vector<int>{});
 
-    // vector<unique_ptr<AdvancedLocalSearch>> MSLSadvancedLocalSearches;
-    // MSLSadvancedLocalSearches.reserve(2);
-    // MSLSadvancedLocalSearches.emplace_back(make_unique<MSLS>(dataA, randomSolverA, LocalSearchA, 200, -1, false, true));
-    // MSLSadvancedLocalSearches.emplace_back(make_unique<MSLS>(dataB, randomSolverB, LocalSearchB, 200, -1, false, true));
+    vector<unique_ptr<AdvancedLocalSearch>> MSLSadvancedLocalSearches;
+    MSLSadvancedLocalSearches.reserve(2);
+    MSLSadvancedLocalSearches.emplace_back(make_unique<MSLS>(dataA, randomSolverA, LocalSearchA, 200, -1, false, true));
+    MSLSadvancedLocalSearches.emplace_back(make_unique<MSLS>(dataB, randomSolverB, LocalSearchB, 200, -1, false, true));
 
     // Experiment
     int numRuns = 20;
     chrono::time_point<chrono::steady_clock> startTime, endTime;
 
-    // vector<Statistic> MSLSscoreStatistics;
-    // MSLSscoreStatistics.reserve(MSLSadvancedLocalSearches.size());
-    // vector<Statistic> MSLStimeStatistics;
-    // MSLStimeStatistics.reserve(MSLSadvancedLocalSearches.size());
-    // vector<Statistic> MSLSiterationStatistics;
-    // MSLSiterationStatistics.reserve(MSLSadvancedLocalSearches.size());
+    vector<Statistic> MSLSscoreStatistics;
+    MSLSscoreStatistics.reserve(MSLSadvancedLocalSearches.size());
+    vector<Statistic> MSLStimeStatistics;
+    MSLStimeStatistics.reserve(MSLSadvancedLocalSearches.size());
+    vector<Statistic> MSLSiterationStatistics;
+    MSLSiterationStatistics.reserve(MSLSadvancedLocalSearches.size());
 
-    // for (auto &solver : MSLSadvancedLocalSearches)
-    // {
-    //     MSLSscoreStatistics.emplace_back(
-    //         solver->data->getName(),
-    //         solver->getAlgorithmName());
-    //     MSLStimeStatistics.emplace_back(
-    //         solver->data->getName(),
-    //         solver->getAlgorithmName());
-    //     MSLSiterationStatistics.emplace_back(
-    //         solver->data->getName(),
-    //         solver->getAlgorithmName());
-    // }
-    // for (int run = 0; run < numRuns; run++)
-    // {
-    //     for (size_t i = 0; i < MSLSadvancedLocalSearches.size(); i++)
-    //     {
-    //         const auto &solver = MSLSadvancedLocalSearches[i];
+    for (auto &solver : MSLSadvancedLocalSearches)
+    {
+        MSLSscoreStatistics.emplace_back(
+            solver->data->getName(),
+            solver->getAlgorithmName());
+        MSLStimeStatistics.emplace_back(
+            solver->data->getName(),
+            solver->getAlgorithmName());
+        MSLSiterationStatistics.emplace_back(
+            solver->data->getName(),
+            solver->getAlgorithmName());
+    }
+    for (int run = 0; run < numRuns; run++)
+    {
+        for (size_t i = 0; i < MSLSadvancedLocalSearches.size(); i++)
+        {
+            const auto &solver = MSLSadvancedLocalSearches[i];
 
-    //         println("{} - {} - {}", run, solver->data->getName(), solver->getAlgorithmName());
+            println("{} - {} - {}", run, solver->data->getName(), solver->getAlgorithmName());
 
-    //         startTime = chrono::steady_clock::now();
-    //         solver->solve();
-    //         endTime = chrono::steady_clock::now();
+            startTime = chrono::steady_clock::now();
+            solver->solve();
+            endTime = chrono::steady_clock::now();
 
-    //         if (solver->bestSolutionScore > MSLSscoreStatistics[i].max)
-    //         {
-    //             solver->saveToFile(format("{}_{}", solver->data->getName(), solver->getAlgorithmName()));
-    //         }
+            if (solver->bestSolutionScore > MSLSscoreStatistics[i].max)
+            {
+                solver->saveToFile(format("{}_{}", solver->data->getName(), solver->getAlgorithmName()));
+            }
 
-    //         MSLSscoreStatistics[i].update(solver->bestSolutionScore);
-    //         MSLStimeStatistics[i].update(chrono::duration<double, std::milli>(endTime - startTime).count());
-    //         MSLSiterationStatistics[i].update(solver->currentIterations);
-    //     }
-    // }
-    // for (auto &stat : MSLSscoreStatistics)
-    //     stat.average /= numRuns;
-    // for (auto &stat : MSLStimeStatistics)
-    //     stat.average /= numRuns;
-    // for (auto &stat : MSLSiterationStatistics)
-    //     stat.average /= numRuns;
+            MSLSscoreStatistics[i].update(solver->bestSolutionScore);
+            MSLStimeStatistics[i].update(chrono::duration<double, std::milli>(endTime - startTime).count());
+            MSLSiterationStatistics[i].update(solver->currentIterations);
+        }
+    }
+    for (auto &stat : MSLSscoreStatistics)
+        stat.average /= numRuns;
+    for (auto &stat : MSLStimeStatistics)
+        stat.average /= numRuns;
+    for (auto &stat : MSLSiterationStatistics)
+        stat.average /= numRuns;
 
-    // double timeLimitA = MSLStimeStatistics[0].average;
-    // double timeLimitB = MSLStimeStatistics[1].average;
-    // println("Time limits: {:.4f}; {:.4f}", timeLimitA, timeLimitB);
+    double timeLimitA = MSLStimeStatistics[0].average;
+    double timeLimitB = MSLStimeStatistics[1].average;
+    println("Time limits: {:.4f}; {:.4f}", timeLimitA, timeLimitB);
 
     // double timeLimitA = 4329.2627;
     // double timeLimitB = 4687.7395;
-    double timeLimitA = 100.0;
-    double timeLimitB = 100.0;
+    // double timeLimitA = 100.0;
+    // double timeLimitB = 100.0;
 
     vector<unique_ptr<AdvancedLocalSearch>> advancedLocalSearches;
     advancedLocalSearches.reserve(6);
     constexpr unsigned int SEED = 0;
-    // advancedLocalSearches.emplace_back(make_unique<ILS>(dataA, randomSolverA, LocalSearchA, SEED, -1, timeLimitA, true, true));
-    // advancedLocalSearches.emplace_back(make_unique<ILS>(dataB, randomSolverB, LocalSearchB, SEED, -1, timeLimitB, true, true));
-    advancedLocalSearches.emplace_back(make_unique<LNS>(dataA, randomSolverA, LocalSearchA, SEED, 30, -1, timeLimitA, true, false));
-    advancedLocalSearches.emplace_back(make_unique<LNS>(dataB, randomSolverB, LocalSearchB, SEED, 30, -1, timeLimitB, true, false));
-    advancedLocalSearches.emplace_back(make_unique<LNS>(dataA, randomSolverA, LocalSearchA, SEED, 30, -1, timeLimitA, true, true));
-    advancedLocalSearches.emplace_back(make_unique<LNS>(dataB, randomSolverB, LocalSearchB, SEED, 30, -1, timeLimitB, true, true));
+    advancedLocalSearches.emplace_back(make_unique<ILS>(dataA, randomSolverA, LocalSearchA, SEED, -1, timeLimitA, true, true));
+    advancedLocalSearches.emplace_back(make_unique<ILS>(dataB, randomSolverB, LocalSearchB, SEED, -1, timeLimitB, true, true));
+    // advancedLocalSearches.emplace_back(make_unique<LNS>(dataA, randomSolverA, LocalSearchA, SEED, 30, -1, timeLimitA, true, false));
+    // advancedLocalSearches.emplace_back(make_unique<LNS>(dataB, randomSolverB, LocalSearchB, SEED, 30, -1, timeLimitB, true, false));
+    // advancedLocalSearches.emplace_back(make_unique<LNS>(dataA, randomSolverA, LocalSearchA, SEED, 30, -1, timeLimitA, true, true));
+    // advancedLocalSearches.emplace_back(make_unique<LNS>(dataB, randomSolverB, LocalSearchB, SEED, 30, -1, timeLimitB, true, true));
 
     vector<Statistic> scoreStatistics;
     scoreStatistics.reserve(advancedLocalSearches.size());
@@ -184,8 +185,8 @@ int main()
 
     vector<unique_ptr<EvolutionMetaheuristic>> evolutionSolvers;
     evolutionSolvers.reserve(4);
-    // // evolutionSolvers.emplace_back(make_unique<HAE1>(dataA, randomSolverA, LocalSearchA, 20, -1, timeLimitA, true, SEED));
-    // // evolutionSolvers.emplace_back(make_unique<HAE1>(dataB, randomSolverB, LocalSearchB, 20, -1, timeLimitB, true, SEED));
+    evolutionSolvers.emplace_back(make_unique<HAE1>(dataA, randomSolverA, LocalSearchA, 20, -1, timeLimitA, true, SEED));
+    evolutionSolvers.emplace_back(make_unique<HAE1>(dataB, randomSolverB, LocalSearchB, 20, -1, timeLimitB, true, SEED));
     // evolutionSolvers.emplace_back(make_unique<HAE2>(dataA, randomSolverA, LocalSearchA, 20, -1, timeLimitA, true, SEED));
     // evolutionSolvers.emplace_back(make_unique<HAE2>(dataB, randomSolverB, LocalSearchB, 20, -1, timeLimitB, true, SEED));
     // evolutionSolvers.emplace_back(make_unique<HAE2>(dataA, randomSolverA, LocalSearchA, 20, -1, timeLimitA, false, SEED));
@@ -314,11 +315,66 @@ int main()
     for (auto &stat : iterationStatisticsALNS)
         stat.average /= numRuns;
     
+    vector<unique_ptr<MetaParallel>> metaParallelSolvers;
+    metaParallelSolvers.reserve(2);
+    metaParallelSolvers.emplace_back(make_unique<MetaParallel>(dataA, randomSolverA, LocalSearchA, SEED, -1, timeLimitA));
+    metaParallelSolvers.emplace_back(make_unique<MetaParallel>(dataB, randomSolverB, LocalSearchB, SEED, -1, timeLimitB));
+
+    vector<Statistic> scoreStatisticsMetaParallel;
+    scoreStatisticsMetaParallel.reserve(metaParallelSolvers.size());
+    vector<Statistic> timeStatisticsMetaParallel;
+    timeStatisticsMetaParallel.reserve(metaParallelSolvers.size());
+    vector<Statistic> iterationStatisticsMetaParallel;
+    iterationStatisticsMetaParallel.reserve(metaParallelSolvers.size());
+    for (auto &solver : metaParallelSolvers)
+    {
+        scoreStatisticsMetaParallel.emplace_back(
+            solver->data->getName(),
+            solver->getAlgorithmName());
+        timeStatisticsMetaParallel.emplace_back(
+            solver->data->getName(),
+            solver->getAlgorithmName());
+        iterationStatisticsMetaParallel.emplace_back(
+            solver->data->getName(),
+            solver->getAlgorithmName());
+    }
+    for (int run = 0; run < numRuns; run++)
+    {
+        for (size_t i = 0; i < metaParallelSolvers.size(); i++)
+        {
+            auto &solver = metaParallelSolvers[i];
+
+            println("{} - {} - {}", run, solver->data->getName(), solver->getAlgorithmName());
+
+            startTime = chrono::steady_clock::now();
+            solver->solve();
+            endTime = chrono::steady_clock::now();
+            
+            int bestSolutionScore = solver->bestSolutionScore;
+
+            if (bestSolutionScore > scoreStatisticsMetaParallel[i].max)
+            {
+                solver->saveToFile(format("{}_{}", solver->data->getName(), solver->getAlgorithmName()));
+            }
+
+            scoreStatisticsMetaParallel[i].update(bestSolutionScore);
+            timeStatisticsMetaParallel[i].update(chrono::duration<double, std::milli>(endTime - startTime).count());
+            iterationStatisticsMetaParallel[i].update(solver->currentIterations);
+        }
+    }
+    for (auto &stat : scoreStatisticsMetaParallel)
+        stat.average /= numRuns;
+    for (auto &stat : timeStatisticsMetaParallel)
+        stat.average /= numRuns;
+    for (auto &stat : iterationStatisticsMetaParallel)
+        stat.average /= numRuns;
+
     auto allScoreStatistics = {
         // MSLSscoreStatistics,
         scoreStatistics,
         scoreStatisticsEvolution,
-        scoreStatisticsALNS
+        scoreStatisticsALNS,
+        scoreStatisticsMetaParallel
     };
 
     println("\nScore statistics:");
@@ -329,7 +385,8 @@ int main()
         // MSLStimeStatistics,
         timeStatistics,
         timeStatisticsEvolution,
-        timeStatisticsALNS
+        timeStatisticsALNS,
+        timeStatisticsMetaParallel
     };
 
     println("\nTime statistics:");
@@ -340,7 +397,8 @@ int main()
         // MSLSiterationStatistics,
         iterationStatistics,
         iterationStatisticsEvolution,
-        iterationStatisticsALNS
+        iterationStatisticsALNS,
+        iterationStatisticsMetaParallel
     };
 
     println("\nIteration statistics:");
